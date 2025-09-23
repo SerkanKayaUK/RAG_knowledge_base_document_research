@@ -4,11 +4,18 @@ from langchain.prompts.prompt import PromptTemplate
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_community.vectorstores import FAISS
 from langchain.chains import LLMChain
+import streamlit as st
+from langchain_community.chat_message_histories import StreamlitChatMessageHistory
+
+#Configure streamlit app
+st.set_page_config(page_title="By Miles - Policy Handbook Customer ChatBot", page_icon="📖")
+st.title("By Miles - Policy Handbook Customer ChatBot")
 
 # Define vectorstore
 global vectorstore_faiss
 
 # Define 3 convenience functions
+@st.cache_resource
 def config_llm():
     client = boto3.client(service_name="bedrock-runtime", region_name="eu-west-2")
     model_kwargs = {
@@ -21,7 +28,8 @@ def config_llm():
     #model_id ="anthropic.claude-3-7-sonnet-20250219-v1:0"
     llm = ChatBedrock(model_id=model_id, client=client, model_kwargs=model_kwargs)
     return llm
- 
+
+@st.cache_resource 
 def config_vector_db(filename):
     client = boto3.client(service_name="bedrock-runtime", region_name="eu-west-2") 
     bedrock_embeddings = BedrockEmbeddings(client=client, model_id="amazon.titan-embed-text-v2:0")
@@ -32,7 +40,7 @@ def config_vector_db(filename):
 
 def vector_search(query):
     global vectorstore_faiss  
-    docs = vectorstore_faiss.similarity_search_with_score(query)  # (....,k=3) if you want to limit results
+    docs = vectorstore_faiss.similarity_search_with_score(query, k=3)  # Limit results
     info = ""
     for doc in docs:
         info += doc[0].page_content+'\n'
@@ -42,14 +50,18 @@ def vector_search(query):
 llm = config_llm()
 vectorstore_faiss = config_vector_db("Policy_handbook.pdf")
 
+# Setup memory
+msgs = StreamlitChatMessageHistory(key= "langchain_messages")
+if len(msgs.messages)==0:
+    msgs.add_ai_message("How can I help you?")
+
 # Creating template
 my_template = """
 Human:
     You are a conversational assistant designed to help answer questions from a customer.
     You should reply to the customer's question using the information provided below. 
-    Include all relevant information but keep your answer short.
-    Never start answering like this: "According to the policy handbook or according to the information provided..."
-    Only answer the question asked.
+    Include all relevant information but keep your answer short. Only answer the question.
+    Do not say things like "according to the training or handbook or according to the information provided..."
 
     <Information>
     {info}
@@ -73,6 +85,10 @@ question_chain= LLMChain(
     output_key= 'answer'
 )
 
+#Render current messages from StreamlitChatMessageHistory
+for msg in msgs.messages:
+    st.chat_message(msg.type).write(msg.content)
+
 #Get question, perform similarity search, invoke model and return result.
 while True:
     question= input("\nWhat would like to learn from the By Miles Policy Handbook Manual ?\n")
@@ -81,4 +97,4 @@ while True:
     output= question_chain.invoke({'input': question, 'info': info})  # invoke the model, providing additional context
 
     #display the result
-    print('\n'+output['answer'])
+    print(output['answer'])

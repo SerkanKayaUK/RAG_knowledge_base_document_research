@@ -6,6 +6,8 @@ from langchain_community.vectorstores import FAISS
 from langchain.chains import LLMChain
 import streamlit as st
 from langchain_community.chat_message_histories import StreamlitChatMessageHistory
+import warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 #Configure streamlit app
 st.set_page_config(page_title="By Miles - Policy Handbook Customer ChatBot", page_icon="📖")
@@ -37,14 +39,6 @@ def config_vector_db(filename):
     pages = loader.load_and_split()
     vectorstore_faiss = FAISS.from_documents(pages, bedrock_embeddings)
     return vectorstore_faiss
-
-def vector_search(query):
-    global vectorstore_faiss  
-    docs = vectorstore_faiss.similarity_search_with_score(query, k=3)  # Limit results
-    info = ""
-    for doc in docs:
-        info += doc[0].page_content+'\n'
-    return info
 
 # Configuring the LLM and vector store
 llm = config_llm()
@@ -89,12 +83,22 @@ question_chain= LLMChain(
 for msg in msgs.messages:
     st.chat_message(msg.type).write(msg.content)
 
-#Get question, perform similarity search, invoke model and return result.
-while True:
-    question= input("\nWhat would like to learn from the By Miles Policy Handbook Manual ?\n")
+#If user inputs a new prompt, generate and draw a new response
+if prompt:=st.chat_input():
+    st.chat_message("human").write(prompt)
 
-    info= vector_search(question) # perform a similarity search
-    output= question_chain.invoke({'input': question, 'info': info})  # invoke the model, providing additional context
+    #retrieve relevant documents using a similarity search
+    docs= vectorstore_faiss.similarity_search_with_score(prompt)
+    info = ""
+    for doc in docs:
+        info += doc[0].page_content+'\n'
+    
+    #invoke llm
+    output= question_chain.invoke({'input': prompt, 'info': info})  # invoke the model, providing additional context
+
+    #adding messages to history
+    msgs.add_user_message(prompt)
+    msgs.add_ai_message(output['answer'])
 
     #display the result
-    print(output['answer'])
+    st.chat_message("AI").write(output['answer'])

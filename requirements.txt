@@ -3,3 +3,4 @@ langchain_community
 pypdf
 langchain_aws
 faiss-cpu
+streamlit
